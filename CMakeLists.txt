@@ -16,9 +16,13 @@ set(ARENA_CXX_FLAGS /W4 /permissive- /utf-8 /Zc:__cplusplus /Zc:preprocessor /EH
 # ---------------------------------------------------------------- core library
 add_library(arena_base STATIC
     src/net/codec.cpp
+    src/base/log.cpp
 )
 target_include_directories(arena_base PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_options(arena_base PRIVATE ${ARENA_CXX_FLAGS})
+# MSVC 会把 fopen 这类 C 函数标成 C4996「不安全」，这是它的历史包袱不是真缺陷，
+# 关掉这条噪音，好让 /W4 下剩下的警告都是真问题。
+target_compile_definitions(arena_base PRIVATE _CRT_SECURE_NO_WARNINGS)
 target_link_libraries(arena_base PUBLIC ws2_32)
 
 # ---------------------------------------------------------------- unit tests
