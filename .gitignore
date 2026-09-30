@@ -1,0 +1,14 @@
+build/
+out/
+*.exe
+*.obj
+*.pdb
+*.ilk
+*.log
+logs/
+bench/results/
+compile_commands.json
+.cache/
+.vs/
+.vscode/
+CMakeUserPresets.json

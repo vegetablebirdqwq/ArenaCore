@@ -1,0 +1,29 @@
+cmake_minimum_required(VERSION 3.20)
+project(ArenaCore LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "build type" FORCE)
+endif()
+
+# /Zc:__cplusplus makes __cplusplus report the real standard instead of 199711L.
+# /permissive- turns on conformant mode; /utf-8 keeps source and execution charset UTF-8.
+set(ARENA_CXX_FLAGS /W4 /permissive- /utf-8 /Zc:__cplusplus /Zc:preprocessor /EHsc)
+
+# ---------------------------------------------------------------- core library
+add_library(arena_base STATIC
+    src/net/codec.cpp
+)
+target_include_directories(arena_base PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(arena_base PRIVATE ${ARENA_CXX_FLAGS})
+target_link_libraries(arena_base PUBLIC ws2_32)
+
+# ---------------------------------------------------------------- unit tests
+enable_testing()
+add_executable(arena_tests tests/test_main.cpp)
+target_link_libraries(arena_tests PRIVATE arena_base)
+target_compile_options(arena_tests PRIVATE ${ARENA_CXX_FLAGS})
+add_test(NAME arena_unit COMMAND arena_tests)
