@@ -4,6 +4,11 @@
 
 namespace arena::game {
 
+void AoiGrid::clear() {
+    cells_.clear();
+    where_.clear();
+}
+
 void AoiGrid::erase(std::uint32_t id) {
     const auto it = where_.find(id);
     if (it == where_.end()) {
