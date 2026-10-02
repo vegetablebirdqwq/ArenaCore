@@ -53,14 +53,33 @@ static void log_line(const char* fmt, ...) {
     va_end(args2);
 }
 
-// 轻量解析快照：读 frame + 实体数（前两个 varint）。返回实体数，失败返回 0。
-static std::size_t parse_snapshot_count(const std::uint8_t* data, std::size_t size) {
+// 快照里看到的第一个实体（id + 世界坐标）。用于 bot 朝目标靠近再放技能。
+// 快照格式：frame | count | [ id | mask | (mask&pos: x,y int16) | ... ]
+struct SeenEntity {
+    std::uint32_t id = 0;
+    std::int16_t  x = 0;
+    std::int16_t  y = 0;
+    bool has_pos = false;
+};
+
+static SeenEntity parse_snapshot_first_entity(const std::uint8_t* data, std::size_t size) {
+    SeenEntity e;
     std::size_t off = 0;
-    std::uint64_t frame = 0;
-    if (!net::read_varint(data, size, off, frame)) return 0;
-    std::uint64_t count = 0;
-    if (!net::read_varint(data, size, off, count)) return 0;
-    return static_cast<std::size_t>(count);
+    std::uint64_t v = 0;
+    if (!net::read_varint(data, size, off, v)) return e;
+    if (!net::read_varint(data, size, off, v)) return e;   // count
+    if (v == 0) return e;
+    if (!net::read_varint(data, size, off, v)) return e;   // 第一个实体 id
+    e.id = static_cast<std::uint32_t>(v);
+    if (off >= size) return e;
+    const std::uint8_t mask = data[off++];
+    if ((mask & 1u) != 0) {   // kFieldPos = 1u<<0
+        if (off + 4 > size) return e;
+        e.x = static_cast<std::int16_t>(net::load_le16(data + off));
+        e.y = static_cast<std::int16_t>(net::load_le16(data + off + 2));
+        e.has_pos = true;
+    }
+    return e;
 }
 
 static void print_hex(const std::uint8_t* p, std::size_t n) {
@@ -75,44 +94,61 @@ static void print_hex(const std::uint8_t* p, std::size_t n) {
 }
 
 // 按模式决定本次动作：移动量 (dx,dy) + 是否放技能。
-// tick 是 bot 自己的行为节拍（每 300ms 一次），决定行为不需要服务器信息。
+// target：快照里看到的第一个实体（可能是敌人）。有目标时朝它靠近，近则放技能。
 struct BotAction {
     std::int16_t dx = 0;
     std::int16_t dy = 0;
     bool cast_skill = false;
+    bool chasing = false;   // 是否在追目标
 };
 
-static BotAction decide_action(int mode, int bot_id, std::uint64_t tick) {
+static BotAction decide_action(int mode, int bot_id, std::uint64_t tick,
+                               const SeenEntity& target) {
     BotAction a;
-    switch (mode) {
-        case kModeAggressor: {   // 冲锋：大步前冲 + 频繁技能
-            a.dx = 2;                                      // 每步 2 单位（服务端限幅上限内）
-            a.dy = static_cast<std::int16_t>((tick / 5) % 3 - 1);
-            a.cast_skill = (tick % 8 == 0);                // 每 8 tick 放一次
-            break;
+
+    // 有目标：朝它移动（快照坐标是世界单位，dx/dy 每 300ms 发一次，放大系数让它走起来）
+    if (target.id != 0 && target.has_pos) {
+        // 目标在哪个象限就朝哪个方向走（简单 AI：不看自己坐标，只用方向逼近）
+        const std::int8_t sx = (target.x >= 0) ? 1 : -1;
+        const std::int8_t sy = (target.y >= 0) ? 1 : -1;
+        a.dx = sx;
+        a.dy = sy;
+        a.chasing = true;
+        // 边追边打：每 10 个决策周期（≈3 秒）放一次技能。
+        // 命不命中由服务端裁决（射程/CD/队友校验）——客户端只提交意图（服务端权威）。
+        a.cast_skill = (tick % 10 == 0);
+    } else {
+        // 没看到目标：按模式游走
+        switch (mode) {
+            case kModeAggressor: {   // 冲锋：大步前冲 + 频繁技能
+                a.dx = 2;
+                a.dy = static_cast<std::int16_t>((tick / 5) % 3 - 1);
+                a.cast_skill = (tick % 8 == 0);
+                break;
+            }
+            case kModeDefender: {    // 龟缩：小幅震荡 + 定期技能
+                a.dx = static_cast<std::int16_t>((tick / 3) % 2 == 0 ? 0 : 1);
+                a.dy = static_cast<std::int16_t>(((tick / 3) % 2) - 1);
+                a.cast_skill = (tick % 10 == 0);
+                break;
+            }
+            case kModeWanderer:
+            default: {               // 巡逻（默认）：8 方向随机转向 + 偶发技能
+                static const std::int8_t dirs[8][2] = {
+                    {1, 0}, {1, 1}, {0, 1}, {-1, 1},
+                    {-1, 0}, {-1, -1}, {0, -1}, {1, -1},
+                };
+                const int dir = static_cast<int>((tick / 5) % 8);
+                a.dx = dirs[dir][0];
+                a.dy = dirs[dir][1];
+                a.cast_skill = (tick % 12 == 0);
+                break;
+            }
         }
-        case kModeDefender: {    // 龟缩：小幅震荡 + 定期技能
-            a.dx = static_cast<std::int16_t>((tick / 3) % 2 == 0 ? 0 : 1);
-            a.dy = static_cast<std::int16_t>(((tick / 3) % 2) - 1);
-            a.cast_skill = (tick % 10 == 0);
-            break;
+        // bot_id 奇偶让巡逻方向略有不同，观感更乱
+        if (mode == kModeWanderer && (bot_id % 2 == 0)) {
+            a.dy = -a.dy;
         }
-        case kModeWanderer:
-        default: {               // 巡逻（默认）：8 方向随机转向 + 偶发技能
-            static const std::int8_t dirs[8][2] = {
-                {1, 0}, {1, 1}, {0, 1}, {-1, 1},
-                {-1, 0}, {-1, -1}, {0, -1}, {1, -1},
-            };
-            const int dir = static_cast<int>((tick / 5) % 8);   // 每 5 tick 换一次方向
-            a.dx = dirs[dir][0];
-            a.dy = dirs[dir][1];
-            a.cast_skill = (tick % 12 == 0);
-            break;
-        }
-    }
-    // bot_id 奇偶让巡逻方向略有不同，观感更乱
-    if (mode == kModeWanderer && (bot_id % 2 == 0)) {
-        a.dy = -a.dy;
     }
     return a;
 }
@@ -177,6 +213,10 @@ int main(int argc, char** argv) {
     std::uint16_t seq_move = 1;
     std::uint16_t seq_skill = 1;   // 技能用独立序号空间（教程 §7.2 幂等去重）
     std::uint64_t tick = 0;
+    SeenEntity target;             // 最近快照里看到的第一个实体（要打的目标）
+    std::int16_t current_dx = 0;   // 当前决策周期的移动向量
+    std::int16_t current_dy = 0;
+    auto last_move = std::chrono::steady_clock::now();
     auto last_action = std::chrono::steady_clock::now();
 
     const auto end = std::chrono::steady_clock::now() + std::chrono::seconds(120);
@@ -191,9 +231,13 @@ int main(int argc, char** argv) {
                 if (len + 4 > static_cast<std::size_t>(n) - off) break;  // 半包，等下次
                 const std::uint16_t cmd = net::load_le16(buf + off + 4);
                 if (cmd == kCmdSnapshotFull || cmd == kCmdSnapshotDelta) {
-                    const std::size_t seen = parse_snapshot_count(buf + off + 8, len - 4);
-                    log_line("[bot%d] 收到快照 cmd=%04X len=%u 看到%d个实体: ",
-                             bot_id, cmd, len, static_cast<int>(seen));
+                    const SeenEntity e = parse_snapshot_first_entity(buf + off + 8, len - 4);
+                    if (e.id != 0 && e.id != target.id) {
+                        log_line("[bot%d] 发现目标 %u@(%d,%d)，追击中\n", bot_id, e.id, e.x, e.y);
+                    }
+                    if (e.id != 0) target = e;   // 记住目标位置
+                    log_line("[bot%d] 收到快照 cmd=%04X 目标=%u@(%d,%d)\n",
+                             bot_id, cmd, e.id, e.x, e.y);
                     print_hex(buf + off + 8, len - 4 > 24 ? 24 : len - 4);
                 }
                 off += 4 + len;
@@ -203,34 +247,37 @@ int main(int argc, char** argv) {
             break;
         }
 
-        // ---- 每 300ms 按行为模式发一次指令 ----
+        // ---- 行为决策每 300ms 一次；移动指令每 50ms 发一条（移速 ×6，能追上）----
         const auto now = std::chrono::steady_clock::now();
         if (now - last_action > std::chrono::milliseconds(300)) {
             last_action = now;
             ++tick;
-            const BotAction act = decide_action(mode, bot_id, tick);
+            const BotAction act = decide_action(mode, bot_id, tick, target);
 
-            // 移动指令（服务端限幅校验，超了会被拒/被夹）
-            {
-                std::uint8_t payload[4];
-                net::store_le16(payload, static_cast<std::uint16_t>(act.dx));
-                net::store_le16(payload + 2, static_cast<std::uint16_t>(act.dy));
-                auto pkt = net::encode(kCmdMove, seq_move++, payload, 4);
-                ::send(s, reinterpret_cast<const char*>(pkt.data()),
-                       static_cast<int>(pkt.size()), 0);
-            }
-            // 技能指令（服务端校验射程/CD/队友，越界会拒——这正是服务端权威）
-            if (act.cast_skill) {
-                // 目标选对面一队的 bot（1002 或 1003，视自己队伍而定）
-                const std::uint32_t target = (bot_id % 2 == 0) ? 1002u : 1000u;
+            // 技能指令（射程内才放；服务端校验——服务端权威）
+            if (act.cast_skill && target.id != 0) {
                 std::uint8_t sp[4];
                 net::store_le16(sp, 1);   // skill_id=1
-                net::store_le16(sp + 2, static_cast<std::uint16_t>(target & 0xFFFF));
+                net::store_le16(sp + 2, static_cast<std::uint16_t>(target.id & 0xFFFF));
                 auto pkt = net::encode(kCmdSkill, seq_skill++, sp, 4);
                 ::send(s, reinterpret_cast<const char*>(pkt.data()),
                        static_cast<int>(pkt.size()), 0);
-                log_line("[bot%d] 尝试释放技能 → 目标 %u\n", bot_id, target);
+                log_line("[bot%d] 释放技能 → 目标 %u@(%d,%d)\n", bot_id, target.id, target.x, target.y);
             }
+            // 本决策周期内的移动向量（存起来给下面 6 次移动用）
+            current_dx = act.dx;
+            current_dy = act.dy;
+        }
+
+        // 每 50ms 发一次移动指令（用最近一次决策的方向）
+        if (now - last_move > std::chrono::milliseconds(50)) {
+            last_move = now;
+            std::uint8_t payload[4];
+            net::store_le16(payload, static_cast<std::uint16_t>(current_dx));
+            net::store_le16(payload + 2, static_cast<std::uint16_t>(current_dy));
+            auto pkt = net::encode(kCmdMove, seq_move++, payload, 4);
+            ::send(s, reinterpret_cast<const char*>(pkt.data()),
+                   static_cast<int>(pkt.size()), 0);
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
