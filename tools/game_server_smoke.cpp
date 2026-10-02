@@ -5,7 +5,7 @@
 #include "net/iocp_service.h"
 #include "net/session.h"
 #include "net/session_manager.h"
-#include "game/room.h"
+#include "game/room_manager.h"
 
 #include <atomic>
 #include <chrono>
@@ -57,11 +57,11 @@ int main() {
 
     net::IocpService io(0);
     net::SessionManager mgr;
-    game::Room room;
+    game::RoomManager room_mgr;
     std::mutex room_mutex;
     std::atomic<bool> running{true};
 
-    // 注入 Room 广播出口：player_id → Session
+    // 注入 Room 广播出口：player_id → Session（所有房间共享同一出口）
     // 每秒打印一次广播汇总（30Hz 每帧都打会刷屏，看不清）
     struct BcastStats {
         std::uint64_t count = 0;
@@ -70,8 +70,8 @@ int main() {
             std::chrono::steady_clock::now();
     };
     auto* bstats = new BcastStats();   // 生命周期 = 进程，无所谓泄漏
-    room.set_send_fn([&, bstats](std::uint32_t player_id, std::uint16_t cmd,
-                                 const std::vector<std::uint8_t>& payload) {
+    room_mgr.set_send_fn([&, bstats](std::uint32_t player_id, std::uint16_t cmd,
+                                     const std::vector<std::uint8_t>& payload) {
         bstats->count += 1;
         bstats->bytes += payload.size();
         for (const auto& s : mgr.snapshot()) {
@@ -91,12 +91,12 @@ int main() {
         }
     });
 
-    // 预填 4 个 bot
-    room.add_player(1000, 0, "bot0");
-    room.add_player(1001, 0, "bot1");
-    room.add_player(1002, 1, "bot2");
-    room.add_player(1003, 1, "bot3");
-    log_line("[main] 预填 4 bot，room 状态=%d\n", static_cast<int>(room.state()));
+    // 预填 4 个 bot（各占一个房间，凑满 6 人开打）
+    room_mgr.join_or_create(1000, 0, "bot0");
+    room_mgr.join_or_create(1001, 0, "bot1");
+    room_mgr.join_or_create(1002, 1, "bot2");
+    room_mgr.join_or_create(1003, 1, "bot3");
+    log_line("[main] 预填 4 bot，房间数=%zu\n", room_mgr.room_count());
 
     io.start();
 
@@ -113,6 +113,10 @@ int main() {
         session->set_packet_callback(
             [&, player_id](const std::shared_ptr<net::Session>&, net::Packet&& pkt) {
                 std::lock_guard<std::mutex> lk(room_mutex);
+                game::Room* r = room_mgr.find_room_of_player(player_id);
+                if (r == nullptr) {
+                    return;   // 还没进房
+                }
                 if (pkt.cmd == kCmdMove && pkt.payload.size() >= 4) {
                     game::MoveInput in;
                     in.player_id = player_id;
@@ -123,7 +127,7 @@ int main() {
                     in.dy = static_cast<std::int32_t>(static_cast<std::int16_t>(
                         static_cast<std::uint16_t>(pkt.payload[2]) |
                         (static_cast<std::uint16_t>(pkt.payload[3]) << 8)));
-                    room.submit_move(in);
+                    r->submit_move(in);
                 } else if (pkt.cmd == kCmdSkill && pkt.payload.size() >= 4) {
                     game::SkillInput in;
                     in.player_id = player_id;
@@ -132,7 +136,7 @@ int main() {
                                   (static_cast<std::uint16_t>(pkt.payload[1]) << 8);
                     in.target_id = static_cast<std::uint32_t>(pkt.payload[2]) |
                                    (static_cast<std::uint32_t>(pkt.payload[3]) << 8);
-                    room.submit_skill(in);
+                    r->submit_skill(in);
                 }
             });
         session->set_close_callback([&](const std::shared_ptr<net::Session>& s) {
@@ -144,18 +148,20 @@ int main() {
         mgr.add(session);
 
         game::RoomState st = game::RoomState::kWaiting;
+        std::uint32_t room_id = 0;
         {
             std::lock_guard<std::mutex> lk(room_mutex);
             char name[16] = {};
             std::snprintf(name, sizeof(name), "p%u", player_id);
-            room.add_player(player_id, team, name);
-            st = room.state();
+            room_id = room_mgr.join_or_create(player_id, team, name);
+            game::Room* r = room_mgr.find_room(room_id);
+            st = r != nullptr ? r->state() : game::RoomState::kWaiting;
         }
-        log_line("[game] 玩家 %u 加入，房间 %zu 人，状态=%d\n",
-                    player_id, room.player_count(), static_cast<int>(st));
+        log_line("[game] 玩家 %u 加入房间 %u，房间数=%zu\n",
+                    player_id, room_id, room_mgr.room_count());
 
         if (st == game::RoomState::kFighting) {
-            room.on_reconnect(player_id);
+            room_mgr.find_room(room_id)->on_reconnect(player_id);
         }
         return session;
     });
@@ -165,7 +171,7 @@ int main() {
         return 1;
     }
 
-    // 逻辑线程：30Hz tick + 每秒打印一次心跳（证明服务器活着、帧在涨）
+    // 逻辑线程：30Hz tick 所有房间 + 每秒打印一次心跳（证明服务器活着、帧在涨）
     std::thread logic([&] {
         using namespace std::chrono;
         auto last_beat = steady_clock::now();
@@ -174,15 +180,20 @@ int main() {
             const auto now = steady_clock::now();
             {
                 std::lock_guard<std::mutex> lk(room_mutex);
-                room.tick(now);
+                room_mgr.tick_all(now);
             }
             // 每秒心跳：即使没广播也显示「帧在涨、逻辑在跑」
             if (now - last_beat > seconds(1)) {
                 last_beat = now;
-                log_line("[game] 心跳: 帧=%llu 状态=%d 玩家=%zu\n",
-                         static_cast<unsigned long long>(room.frame()),
-                         static_cast<int>(room.state()),
-                         room.player_count());
+                log_line("[game] 心跳: 房间=%zu 玩家=%zu\n",
+                         room_mgr.room_count(),
+                         [&] {
+                             std::size_t total = 0;
+                             for (const auto& [rid, r] : room_mgr.rooms()) {
+                                 total += r->player_count();
+                             }
+                             return total;
+                         }());
             }
         }
     });

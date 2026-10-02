@@ -30,7 +30,7 @@ std::uint32_t RoomManager::join_or_create(std::uint32_t player_id, std::uint8_t 
 
     // 没有合适的房间，新建一个
     const std::uint32_t room_id = next_room_id_++;
-    auto room = std::make_unique<Room>(room_id, SendFn{});
+    auto room = std::make_unique<Room>(room_id, send_);   // send_ 可能为空，Room 内部已判空
     room->add_player(player_id, team, name);
     player_room_[player_id] = room_id;
     rooms_.emplace(room_id, std::move(room));

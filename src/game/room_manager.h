@@ -20,6 +20,9 @@ namespace arena::game {
 /// 网络线程把输入 submit 进来时通过队列转交（本实现里由调用方保证串行）。
 class RoomManager {
 public:
+    /// 设置新建房间用的发送回调（由逻辑层/发送层提供）。创建房间时传给 Room。
+    void set_send_fn(SendFn fn) { send_ = std::move(fn); }
+
     /// 找有空位的房间（未满 6 人且未开打），没有就新建一个。
     /// 返回房间 id。玩家加入后由调用方把连接绑定到该房间。
     std::uint32_t join_or_create(std::uint32_t player_id, std::uint8_t team,
@@ -49,6 +52,7 @@ private:
     std::unordered_map<std::uint32_t, std::unique_ptr<Room>> rooms_;
     // 玩家 → 房间 id（快速反查）
     std::unordered_map<std::uint32_t, std::uint32_t> player_room_;
+    SendFn send_;   // 新建房间用的发送回调
 };
 
 }  // namespace arena::game
