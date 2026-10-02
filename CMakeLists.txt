@@ -84,3 +84,7 @@ target_compile_options(ring_lab PRIVATE ${ARENA_CXX_FLAGS})
 add_executable(redis_demo tools/redis_demo.cpp)
 target_link_libraries(redis_demo PRIVATE arena_base)
 target_compile_options(redis_demo PRIVATE ${ARENA_CXX_FLAGS})
+
+add_executable(hist_lab tools/hist_lab.cpp)
+target_link_libraries(hist_lab PRIVATE arena_base)
+target_compile_options(hist_lab PRIVATE ${ARENA_CXX_FLAGS})
