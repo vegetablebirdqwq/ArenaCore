@@ -71,3 +71,7 @@ target_compile_options(snapshot_smoke PRIVATE ${ARENA_CXX_FLAGS})
 add_executable(game_server tools/game_server_smoke.cpp)
 target_link_libraries(game_server PRIVATE arena_base)
 target_compile_options(game_server PRIVATE ${ARENA_CXX_FLAGS})
+
+add_executable(bot_client tools/bot_client.cpp)
+target_link_libraries(bot_client PRIVATE arena_base)
+target_compile_options(bot_client PRIVATE ${ARENA_CXX_FLAGS})
