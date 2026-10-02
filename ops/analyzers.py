@@ -11,10 +11,11 @@ LLM 只负责"看到一堆告警之后猜根因"，告警本身绝不允许 LLM 
 
 from __future__ import annotations
 
+import json
 import math
-from collections import deque
+from collections import Counter, deque
 from dataclasses import dataclass, field
-from typing import Any, Sequence
+from typing import Any, Iterable, Sequence
 
 # ============================================================ 基础统计
 
@@ -299,3 +300,75 @@ class RuleEngine:
             else:
                 self.streaks[rule] = 0
         return out
+
+
+# ============================================================ 日志管道
+# 日志是 JSONL（每行一个 JSON）。这三件事是 LLM 层的前置：解析、切片、聚合摘要。
+# 关键设计原则：**摘要里的计数是自己算的，不是模型算的。** 模型只负责
+# "从这些事实里推断根因"，不负责"数数"——否则它有机会编数字。
+
+
+def read_jsonl(path: str) -> Iterable[dict[str, Any]]:
+    """逐行读 JSONL，跳过空行和坏行。坏行直接跳过而不是让整个链路崩掉。"""
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                yield json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+
+def slice_logs(logs: Sequence[dict[str, Any]], ts: float,
+               before_s: float, after_s: float, max_lines: int) -> list[dict[str, Any]]:
+    """取 [ts-before, ts+after] 秒内的日志，最多 max_lines 行（已按 ts 升序）。
+
+    告警要能跟日志按时间对齐，靠的是 ts（epoch 秒）。切片窗口是"告警瞬间附近"
+    的证据，给模型看太多会淹没注意力。
+    """
+    out = []
+    for e in logs:
+        t = float(e.get("ts", 0.0))
+        if ts - before_s <= t <= ts + after_s:
+            out.append(e)
+            if len(out) >= max_lines:
+                break
+    return out
+
+
+def summarize_logs(logs: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    """把日志切片压成摘要：总数、按级别、top 事件、活跃 uid、样本行。
+
+    摘要的计数由 Python 算，模型只负责读。这让模型"没有机会编数字"。
+    """
+    total = len(logs)
+    by_level: Counter[str] = Counter()
+    by_event: Counter[str] = Counter()
+    hot_uids: Counter[str] = Counter()
+    samples: list[dict[str, Any]] = []
+    for e in logs:
+        by_level[e.get("level", "info")] += 1
+        by_event[e.get("event", "unknown")] += 1
+        uid = e.get("uid", 0)
+        if uid:
+            hot_uids[str(uid)] += 1
+        if len(samples) < 16:
+            samples.append(e)
+    return {
+        "total_lines": total,
+        "by_level": dict(by_level),
+        "top_events": by_event.most_common(10),
+        "hot_uids": hot_uids.most_common(5),
+        "samples": samples,
+    }
+
+
+def estimate_tokens(text: str) -> int:
+    """粗略估算 token 数。中文 1 字 ≈ 1.5 token，ASCII ≈ 0.25 token。
+    用途：控制送进 LLM 的上下文长度，别把 200 行日志全塞进去。
+    """
+    cjk = sum(1 for ch in text if '\u4e00' <= ch <= '\u9fff')
+    ascii_chars = len(text) - cjk
+    return int(cjk * 1.5 + ascii_chars * 0.25) + 1

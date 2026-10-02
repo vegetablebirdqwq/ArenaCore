@@ -12,3 +12,5 @@ compile_commands.json
 .vs/
 .vscode/
 CMakeUserPresets.json
+
+ops_state/
