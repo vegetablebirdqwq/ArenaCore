@@ -44,3 +44,7 @@ target_compile_options(iocp_smoke PRIVATE ${ARENA_CXX_FLAGS})
 add_executable(echo_smoke tools/echo_server_smoke.cpp)
 target_link_libraries(echo_smoke PRIVATE arena_base)
 target_compile_options(echo_smoke PRIVATE ${ARENA_CXX_FLAGS})
+
+add_executable(echo_client tools/client_smoke.cpp)
+target_link_libraries(echo_client PRIVATE arena_base)
+target_compile_options(echo_client PRIVATE ${ARENA_CXX_FLAGS})
