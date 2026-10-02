@@ -73,8 +73,23 @@ int main(int argc, char** argv) {
     ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
 
     if (::connect(s, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR) {
-        log_line("[bot%d] connect 失败 err=%d\n", bot_id, ::WSAGetLastError());
-        return 1;
+        // 服务器可能还没起，自动重试（最多 20 秒）
+        log_line("[bot%d] connect 失败 err=%d，自动重试...\n", bot_id, ::WSAGetLastError());
+        bool connected = false;
+        for (int attempt = 0; attempt < 20; ++attempt) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            ::closesocket(s);
+            s = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+            if (s == INVALID_SOCKET) { break; }
+            if (::connect(s, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != SOCKET_ERROR) {
+                connected = true;
+                break;
+            }
+        }
+        if (!connected) {
+            log_line("[bot%d] 重试 20 秒仍连不上，退出\n", bot_id);
+            return 1;
+        }
     }
     log_line("[bot%d] 已连接，加入房间\n", bot_id);
 
