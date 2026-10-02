@@ -38,13 +38,32 @@ int main() {
     std::atomic<bool> running{true};
 
     // 注入 Room 广播出口：player_id → Session
-    room.set_send_fn([&](std::uint32_t player_id, std::uint16_t cmd,
-                         const std::vector<std::uint8_t>& payload) {
+    // 每秒打印一次广播汇总（30Hz 每帧都打会刷屏，看不清）
+    struct BcastStats {
+        std::uint64_t count = 0;
+        std::uint64_t bytes = 0;
+        decltype(std::chrono::steady_clock::now()) last_report =
+            std::chrono::steady_clock::now();
+    };
+    auto* bstats = new BcastStats();   // 生命周期 = 进程，无所谓泄漏
+    room.set_send_fn([&, bstats](std::uint32_t player_id, std::uint16_t cmd,
+                                 const std::vector<std::uint8_t>& payload) {
+        bstats->count += 1;
+        bstats->bytes += payload.size();
         for (const auto& s : mgr.snapshot()) {
             if (s->id() == player_id) {
                 s->send(net::encode(cmd, 0, payload.data(), payload.size()));
-                return;
+                break;
             }
+        }
+        const auto now = std::chrono::steady_clock::now();
+        if (now - bstats->last_report > std::chrono::seconds(1)) {
+            std::printf("[game] 广播汇总: 过去 1 秒 %llu 次 / %llu 字节\n",
+                        static_cast<unsigned long long>(bstats->count),
+                        static_cast<unsigned long long>(bstats->bytes));
+            bstats->count = 0;
+            bstats->bytes = 0;
+            bstats->last_report = now;
         }
     });
 
