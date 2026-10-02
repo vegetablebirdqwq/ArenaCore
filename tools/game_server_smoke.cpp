@@ -132,8 +132,8 @@ int main() {
         }
     });
 
-    std::printf("[main] 集成服务器就绪 127.0.0.1:9527（25 秒后退出）\n");
-    std::this_thread::sleep_for(std::chrono::seconds(25));
+    std::printf("[main] 集成服务器就绪 127.0.0.1:9527（120 秒后退出，Ctrl+C 可提前结束）\n");
+    std::this_thread::sleep_for(std::chrono::seconds(120));
 
     running.store(false);
     if (logic.joinable()) logic.join();

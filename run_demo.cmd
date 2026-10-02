@@ -33,6 +33,6 @@ echo 已启动 2 个 bot（+ 服务器预填 4 个 = 满 6 人开打）。
 echo 看「ArenaCore-Server」窗口的日志：
 echo   玩家加入 -> 房间满 6 人 -> 开打 -> 每帧广播快照
 echo.
-echo 25 秒后服务器自动退出。想看更久就改 game_server 的 25 秒。
+echo 120 秒后服务器自动退出（Ctrl+C 可提前结束）。想看更久就改 game_server 里的 120。
 echo.
 endlocal

@@ -61,7 +61,7 @@ int main(int argc, char** argv) {
     std::uint16_t seq = 1;
     auto last_move = std::chrono::steady_clock::now();
 
-    const auto end = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+    const auto end = std::chrono::steady_clock::now() + std::chrono::seconds(120);
     while (std::chrono::steady_clock::now() < end) {
         // ---- 收广播快照 ----
         std::uint8_t buf[4096];
