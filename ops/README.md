@@ -9,7 +9,9 @@
             → ④ 处置草案（动作白名单，必须人点头才执行）
 ```
 
-## 已落地：第一层规则检测（ops/analyzers.py）
+## 已落地
+
+### 第一层规则检测（ops/analyzers.py）
 
 **不依赖任何第三方库，纯 Python 标准库。** 告警绝不允许 LLM 参与——否则"系统到底有没有出事"都不可复现。
 
@@ -46,10 +48,34 @@
 python ops/test_analyzers.py
 ```
 
+## 完整闭环：故障注入 + 命中率（ops/inject_fault.py + eval_faults.py）
+
+**"OpsAgent 能定位根因"这句话本身是不可验证的。** 先注入**已知**故障、把期望根因写成 ground_truth.json，再让链路跑，得出可复现的命中率。
+
+```
+python ops/inject_fault.py --out ops_state/scenarios   # 生成 5 种故障场景 + ground truth
+python ops/eval_faults.py --scenarios ops_state/scenarios
+```
+
+**实测结果：5 种故障命中率 5/5 = 100%**（纯规则降级路径，不依赖 LLM API）：
+
+| 场景 | 注入故障 | 期望根因 | 实际判定 | 结果 |
+|---|---|---|---|---|
+| F01 | 逻辑帧卡顿 | logic_tick_stall | logic_tick_stall | 命中 |
+| F02 | 掉线风暴 | client_disconnect_storm | client_disconnect_storm | 命中 |
+| F03 | Redis 不可用 | redis_unavailable | redis_unavailable | 命中 |
+| F04 | 房间对象泄漏 | room_leak | room_leak | 命中 |
+| F05 | 匹配队列积压 | match_queue_backlog | match_queue_backlog | 命中 |
+
+**评估标准（防止自欺欺人）**：故障窗内**第一条 critical 告警**的根因与期望一致才算命中（不是"任意一条命中"）。
+
 ## 待做（教程 6.7 后半）
 
-- [ ] 日志管道（JSONL 解析 + 事件聚合）
-- [ ] LLM 根因分析（调外部 API；**模型不是自研**，面试先声明）
+- [x] ~~第一层规则检测（R1-R8）~~
+- [x] ~~日志管道（JSONL 解析 + 事件聚合 + 切片摘要）~~
+- [x] ~~故障注入 + 命中率评估（5/5 可复现）~~
+- [x] ~~纯规则降级分析器（离线可用）~~
+- [ ] LLM 根因分析（接外部 API；**模型不是自研**，面试先声明）
 - [ ] JSON schema 约束 + 校验（防模型输出多余字段）
 - [ ] 动作白名单 + 人确认执行（防幻觉出 rm -rf 级别动作）
 - [ ] 超时/重试/降级/熔断/成本记账
