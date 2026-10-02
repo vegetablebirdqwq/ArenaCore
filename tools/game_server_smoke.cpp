@@ -165,13 +165,25 @@ int main() {
         return 1;
     }
 
-    // 逻辑线程
+    // 逻辑线程：30Hz tick + 每秒打印一次心跳（证明服务器活着、帧在涨）
     std::thread logic([&] {
         using namespace std::chrono;
+        auto last_beat = steady_clock::now();
         while (running.load(std::memory_order_acquire)) {
             std::this_thread::sleep_for(milliseconds(1));
-            std::lock_guard<std::mutex> lk(room_mutex);
-            room.tick(steady_clock::now());
+            const auto now = steady_clock::now();
+            {
+                std::lock_guard<std::mutex> lk(room_mutex);
+                room.tick(now);
+            }
+            // 每秒心跳：即使没广播也显示「帧在涨、逻辑在跑」
+            if (now - last_beat > seconds(1)) {
+                last_beat = now;
+                log_line("[game] 心跳: 帧=%llu 状态=%d 玩家=%zu\n",
+                         static_cast<unsigned long long>(room.frame()),
+                         static_cast<int>(room.state()),
+                         room.player_count());
+            }
         }
     });
 
