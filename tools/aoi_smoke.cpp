@@ -39,10 +39,12 @@ int main() {
     for (auto id : out) std::printf("%u ", id);
     std::printf("\n");
     // 2（130 跨格到格 1，同九宫格）和 3（130 跨格到格 1，同九宫格）应在；4（400 → 格 3，不在九宫格）不应在
-    expect("邻居含 2", std::find(out.begin(), out.end(), 2) != out.end());
-    expect("邻居含 3", std::find(out.begin(), out.end(), 3) != out.end());
-    expect("邻居不含 4", std::find(out.begin(), out.end(), 4) == out.end());
-    expect("邻居不含自己 1", std::find(out.begin(), out.end(), 1) == out.end());
+    // 注意：out 是 vector<uint32_t>，find 的哨兵值必须用 uint32_t —— 写裸 int 字面量
+    // 会触发 /W4 的 C4389（有符号/无符号比较），且行为上也没问题但语义要表达清楚。
+    expect("邻居含 2", std::find(out.begin(), out.end(), std::uint32_t{2}) != out.end());
+    expect("邻居含 3", std::find(out.begin(), out.end(), std::uint32_t{3}) != out.end());
+    expect("邻居不含 4", std::find(out.begin(), out.end(), std::uint32_t{4}) == out.end());
+    expect("邻居不含自己 1", std::find(out.begin(), out.end(), std::uint32_t{1}) == out.end());
 
     // ---- 3. 换格快路径 ----
     grid.insert(1, 0, 0);                 // 同一格，应走快路径不重复
@@ -54,8 +56,8 @@ int main() {
     grid.insert(1, 500 * kFpOne, 0);      // 玩家 1 换到格 3
     grid.query_neighbors(0, 0, 2, out);   // 从原点看（排除 2）
     // 原点九宫格内现在只有 3；1 已离开
-    expect("1 换格后原点九宫格无 1", std::find(out.begin(), out.end(), 1) == out.end());
-    expect("原点九宫格仍有 3", std::find(out.begin(), out.end(), 3) != out.end());
+    expect("1 换格后原点九宫格无 1", std::find(out.begin(), out.end(), std::uint32_t{1}) == out.end());
+    expect("原点九宫格仍有 3", std::find(out.begin(), out.end(), std::uint32_t{3}) != out.end());
 
     std::printf("\n%s（%d 个失败）\n", failures == 0 ? "全部通过" : "有失败", failures);
     return failures == 0 ? 0 : 1;

@@ -1,0 +1,143 @@
+// tools/game_server_smoke.cpp
+// 集成验证 v3：函数式 main（与 echo_smoke 同构，避免类成员栈问题）。
+//   预填 4 bot，真实客户端连上凑满 6 人 → Room 进 kFighting → 30Hz 结算 → 广播。
+#include "net/acceptor.h"
+#include "net/iocp_service.h"
+#include "net/session.h"
+#include "net/session_manager.h"
+#include "game/room.h"
+
+#include <atomic>
+#include <chrono>
+#include <cstdio>
+#include <mutex>
+#include <thread>
+
+using namespace arena;
+
+inline constexpr std::uint16_t kCmdMove = 0x0003;
+inline constexpr std::uint16_t kCmdSkill = 0x0004;
+
+int main() {
+    // 注意：MSVC 的 setvbuf 用 _IOLBF + nullptr buffer 会崩（0xC0000409）。
+    // 要么提供 buffer，要么用 _IONBF。这里用 _IONBF（每 printf 立即写）。
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+
+    WSADATA wsa{};
+    if (::WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
+        std::fprintf(stderr, "[main] WSAStartup 失败\n");
+        return 1;
+    }
+
+    net::IocpService io(0);
+    net::SessionManager mgr;
+    game::Room room;
+    std::mutex room_mutex;
+    std::atomic<bool> running{true};
+
+    // 注入 Room 广播出口：player_id → Session
+    room.set_send_fn([&](std::uint32_t player_id, std::uint16_t cmd,
+                         const std::vector<std::uint8_t>& payload) {
+        for (const auto& s : mgr.snapshot()) {
+            if (s->id() == player_id) {
+                s->send(net::encode(cmd, 0, payload.data(), payload.size()));
+                return;
+            }
+        }
+    });
+
+    // 预填 4 个 bot
+    room.add_player(1000, 0, "bot0");
+    room.add_player(1001, 0, "bot1");
+    room.add_player(1002, 1, "bot2");
+    room.add_player(1003, 1, "bot3");
+    std::printf("[main] 预填 4 bot，room 状态=%d\n", static_cast<int>(room.state()));
+
+    io.start();
+
+    net::Acceptor acceptor(io, [&](SOCKET sock, const sockaddr_in& peer) {
+        char ip[32] = {};
+        ::inet_ntop(AF_INET, &peer.sin_addr, ip, sizeof(ip));
+        char pt[64] = {};
+        std::snprintf(pt, sizeof(pt), "%s:%u", ip, ::ntohs(peer.sin_port));
+
+        auto session = std::make_shared<net::Session>(io, sock, mgr.next_id(), pt);
+        const std::uint32_t player_id = static_cast<std::uint32_t>(session->id());
+        const std::uint8_t team = (player_id % 2 == 0) ? 0u : 1u;
+
+        session->set_packet_callback(
+            [&, player_id](const std::shared_ptr<net::Session>&, net::Packet&& pkt) {
+                std::lock_guard<std::mutex> lk(room_mutex);
+                if (pkt.cmd == kCmdMove && pkt.payload.size() >= 4) {
+                    game::MoveInput in;
+                    in.player_id = player_id;
+                    in.seq = pkt.seq;
+                    in.dx = static_cast<std::int32_t>(static_cast<std::int16_t>(
+                        static_cast<std::uint16_t>(pkt.payload[0]) |
+                        (static_cast<std::uint16_t>(pkt.payload[1]) << 8)));
+                    in.dy = static_cast<std::int32_t>(static_cast<std::int16_t>(
+                        static_cast<std::uint16_t>(pkt.payload[2]) |
+                        (static_cast<std::uint16_t>(pkt.payload[3]) << 8)));
+                    room.submit_move(in);
+                } else if (pkt.cmd == kCmdSkill && pkt.payload.size() >= 4) {
+                    game::SkillInput in;
+                    in.player_id = player_id;
+                    in.seq = pkt.seq;
+                    in.skill_id = static_cast<std::uint16_t>(pkt.payload[0]) |
+                                  (static_cast<std::uint16_t>(pkt.payload[1]) << 8);
+                    in.target_id = static_cast<std::uint32_t>(pkt.payload[2]) |
+                                   (static_cast<std::uint32_t>(pkt.payload[3]) << 8);
+                    room.submit_skill(in);
+                }
+            });
+        session->set_close_callback([&](const std::shared_ptr<net::Session>& s) {
+            mgr.remove(s->id());
+            std::printf("[game] 玩家 %llu 断开\n", static_cast<unsigned long long>(s->id()));
+        });
+
+        session->start();
+        mgr.add(session);
+
+        game::RoomState st = game::RoomState::kWaiting;
+        {
+            std::lock_guard<std::mutex> lk(room_mutex);
+            char name[16] = {};
+            std::snprintf(name, sizeof(name), "p%u", player_id);
+            room.add_player(player_id, team, name);
+            st = room.state();
+        }
+        std::printf("[game] 玩家 %u 加入，房间 %zu 人，状态=%d\n",
+                    player_id, room.player_count(), static_cast<int>(st));
+
+        if (st == game::RoomState::kFighting) {
+            room.on_reconnect(player_id);
+        }
+        return session;
+    });
+
+    if (!acceptor.start("127.0.0.1", 9527)) {
+        std::fprintf(stderr, "[main] acceptor 启动失败\n");
+        return 1;
+    }
+
+    // 逻辑线程
+    std::thread logic([&] {
+        using namespace std::chrono;
+        while (running.load(std::memory_order_acquire)) {
+            std::this_thread::sleep_for(milliseconds(1));
+            std::lock_guard<std::mutex> lk(room_mutex);
+            room.tick(steady_clock::now());
+        }
+    });
+
+    std::printf("[main] 集成服务器就绪 127.0.0.1:9527（25 秒后退出）\n");
+    std::this_thread::sleep_for(std::chrono::seconds(25));
+
+    running.store(false);
+    if (logic.joinable()) logic.join();
+    acceptor.stop();
+    io.stop();
+    ::WSACleanup();
+    std::printf("[main] 退出\n");
+    return 0;
+}

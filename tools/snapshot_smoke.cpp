@@ -7,8 +7,10 @@
 #include "game/snapshot.h"
 #include "game/snapshot_codec.h"
 
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <utility>
 #include <vector>
 
 static int failures = 0;
@@ -19,19 +21,6 @@ static void expect(const char* name, bool cond) {
 
 using namespace arena::game;
 using Clock = std::chrono::steady_clock;
-static Clock::time_point advance_one_frame(Clock::time_point now) {
-    return now + std::chrono::microseconds(33334);
-}
-
-static Player mk_player(std::uint32_t id, std::uint8_t team,
-                        std::int32_t x, std::int32_t y) {
-    Player p;
-    p.id = id;
-    p.team = team;
-    p.x = x;
-    p.y = y;
-    return p;
-}
 
 int main() {
     auto now = Clock::now();
@@ -39,9 +28,8 @@ int main() {
     // ---- 收集 A 收到的 delta ----
     std::vector<DeltaFrame> a_deltas;
     {
-        Room room;
-        room.set_send_fn([&](std::uint32_t pid, std::uint16_t cmd,
-                             const std::vector<std::uint8_t>& payload) {
+        Room room(1, [&a_deltas](std::uint32_t pid, std::uint16_t cmd,
+                                 const std::vector<std::uint8_t>& payload) {
             if (pid == 1 && cmd == kCmdSnapshotDelta) {
                 DeltaFrame d;
                 if (decode_delta(payload.data(), payload.size(), d)) {
@@ -50,17 +38,34 @@ int main() {
             }
         });
 
-        room.add_player(mk_player(1, 0, 0, 0));
-        room.add_player(mk_player(2, 1, 130 * kFpOne, 0));  // 视野内
-        room.add_player(mk_player(3, 0, -130 * kFpOne, 0)); // 视野内
+        // 满 6 人才进 kFighting（教程 §2.4 的状态机），所以补满 6 人。
+        room.add_player(1, 0, "p1");   // A team0
+        room.add_player(2, 1, "p2");   // B team1
+        room.add_player(3, 0, "p3");   // C team0
+        room.add_player(4, 1, "p4");
+        room.add_player(5, 0, "p5");
+        room.add_player(6, 1, "p6");
 
-        // 帧 1：所有人入场（都是新进入，全量）
-        now = advance_one_frame(now); room.tick(now);
-        // 帧 2~10：A 静止，B 每帧移动 2 单位，C 静止
+        // 摆位。find_player 返回非 const 指针，测试摆位直接用（教程 §8 明示的
+        // 测试 hack：生产 Room 不该开放"任意传送"，这是反外挂的底线）。
+        // A 在原点；B 在 A 的九宫格内（130 单位，跨到格 1）；C 在负方向，
+        // 跨到格 -2，**不在** A 的九宫格里；4/5/6 留在出生点（±300），也不在 A 的视野里。
+        {
+            Player& a = *room.find_player(1);
+            a.x = 0; a.y = 0;
+            Player& b = *room.find_player(2);
+            b.x = 130 * kFpOne; b.y = 0;
+            Player& c = *room.find_player(3);
+            c.x = -130 * kFpOne; c.y = 0;
+        }
+
+        // 帧 1：B 进入 A 视野（全量）
+        now += std::chrono::microseconds(33334); room.tick(now);
+        // 帧 2~10：A 静止，B 每帧移动 1 单位，C 静止
         for (int f = 0; f < 9; ++f) {
-            room.enqueue_move(MoveInput{2, static_cast<std::uint16_t>(f + 1),
-                                        kFpOne, 0});   // B 每帧移 1 单位
-            now = advance_one_frame(now); room.tick(now);
+            // MoveInput{player_id, dx, dy, seq}：B 每帧移 1 单位
+            room.submit_move(MoveInput{2, kFpOne, 0, static_cast<std::uint16_t>(f + 1)});
+            now += std::chrono::microseconds(33334); room.tick(now);
         }
     }
 
@@ -89,11 +94,11 @@ int main() {
         DeltaFrame in;
         in.frame = 42;
         DeltaEntry e1;
-        e1.id = 7; e1.mask = kFieldPos | kFieldHp;
+        e1.id = 7; e1.mask = static_cast<std::uint8_t>(kFieldPos | kFieldHp);
         e1.x = -1234; e1.y = 567; e1.hp_percent = 88;
         in.entries.push_back(e1);
         DeltaEntry e2;
-        e2.id = 300; e2.mask = kFieldFlags; e2.flags = 1;
+        e2.id = 300; e2.mask = static_cast<std::uint8_t>(kFieldFlags); e2.flags = 1;
         in.entries.push_back(e2);
 
         auto payload = encode_delta(in);
@@ -116,7 +121,7 @@ int main() {
         for (std::uint32_t i = 1; i <= 10; ++i) {
             DeltaEntry e;
             e.id = i;
-            e.mask = kFieldPos | kFieldHp;
+            e.mask = static_cast<std::uint8_t>(kFieldPos | kFieldHp);
             e.x = static_cast<std::int16_t>(i * 10);
             e.y = static_cast<std::int16_t>(i * -5);
             e.hp_percent = static_cast<std::uint8_t>(100 - i);

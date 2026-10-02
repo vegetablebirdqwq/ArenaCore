@@ -24,7 +24,6 @@ add_library(arena_base STATIC
     src/game/room.cpp
     src/game/aoi.cpp
     src/game/snapshot_codec.cpp
-    src/game/room_snapshot.cpp
 )
 target_include_directories(arena_base PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_options(arena_base PRIVATE ${ARENA_CXX_FLAGS})
@@ -68,3 +67,7 @@ target_compile_options(combat_smoke PRIVATE ${ARENA_CXX_FLAGS})
 add_executable(snapshot_smoke tools/snapshot_smoke.cpp)
 target_link_libraries(snapshot_smoke PRIVATE arena_base)
 target_compile_options(snapshot_smoke PRIVATE ${ARENA_CXX_FLAGS})
+
+add_executable(game_server tools/game_server_smoke.cpp)
+target_link_libraries(game_server PRIVATE arena_base)
+target_compile_options(game_server PRIVATE ${ARENA_CXX_FLAGS})

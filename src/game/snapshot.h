@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <vector>
 
+#include "game/world.h"
+
 namespace arena::game {
 
 /// 增量字段的位掩码。用位掩码而不是"每个字段带一个 present 标志"，
@@ -27,6 +29,14 @@ struct DeltaEntry {
 struct DeltaFrame {
     std::uint64_t frame = 0;
     std::vector<DeltaEntry> entries;
+};
+
+/// 全量快照：一帧里所有实体的权威状态（Room::build_snapshot 产出）。
+/// 注：教程 §2.4 的 room.h 里 `Snapshot snapshot_;` 引用了这个类型，
+/// 而 §6 只给了 DeltaField/DeltaEntry/DeltaFrame —— 这里补上 Snapshot 定义。
+struct Snapshot {
+    std::uint64_t frame = 0;
+    std::vector<SnapshotEntry> entries;
 };
 
 }  // namespace arena::game
