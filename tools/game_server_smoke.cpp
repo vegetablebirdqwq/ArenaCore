@@ -9,7 +9,9 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdarg>
 #include <cstdio>
+#include <direct.h>
 #include <mutex>
 #include <thread>
 
@@ -18,12 +20,34 @@ using namespace arena;
 inline constexpr std::uint16_t kCmdMove = 0x0003;
 inline constexpr std::uint16_t kCmdSkill = 0x0004;
 
+// 日志 tee：控制台 + logs/demo.log 双写（monitor.html 读取显示）。
+// 用「每次打开-追加-关闭」保证多进程写同一文件不互踩（O_APPEND 原子）。
+// 用绝对路径：不管从哪个目录启动，日志都落在项目 logs\ 下。
+static const char* kLogPath = "E:/projects/ArenaCore/logs/demo.log";
+static void log_line(const char* fmt, ...) {
+    std::va_list args1, args2;
+    va_start(args1, fmt);
+    va_copy(args2, args1);
+    std::vfprintf(stdout, fmt, args1);
+    std::fflush(stdout);
+    va_end(args1);
+    FILE* f = std::fopen(kLogPath, "a");
+    if (f) {
+        std::vfprintf(f, fmt, args2);
+        std::fclose(f);
+    }
+    va_end(args2);
+}
+
 int main() {
     // 让控制台用 UTF-8 显示中文输出（否则 GBK 代码页下中文乱码）
     ::SetConsoleOutputCP(CP_UTF8);
     // 注意：MSVC 的 setvbuf 用 _IOLBF + nullptr buffer 会崩（0xC0000409）。
     // 要么提供 buffer，要么用 _IONBF。这里用 _IONBF（每 printf 立即写）。
     std::setvbuf(stdout, nullptr, _IONBF, 0);
+
+    // 确保日志目录存在
+    ::_mkdir("E:/projects/ArenaCore/logs");
 
     WSADATA wsa{};
     if (::WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
@@ -58,7 +82,7 @@ int main() {
         }
         const auto now = std::chrono::steady_clock::now();
         if (now - bstats->last_report > std::chrono::seconds(1)) {
-            std::printf("[game] 广播汇总: 过去 1 秒 %llu 次 / %llu 字节\n",
+            log_line("[game] 广播汇总: 过去 1 秒 %llu 次 / %llu 字节\n",
                         static_cast<unsigned long long>(bstats->count),
                         static_cast<unsigned long long>(bstats->bytes));
             bstats->count = 0;
@@ -72,7 +96,7 @@ int main() {
     room.add_player(1001, 0, "bot1");
     room.add_player(1002, 1, "bot2");
     room.add_player(1003, 1, "bot3");
-    std::printf("[main] 预填 4 bot，room 状态=%d\n", static_cast<int>(room.state()));
+    log_line("[main] 预填 4 bot，room 状态=%d\n", static_cast<int>(room.state()));
 
     io.start();
 
@@ -113,7 +137,7 @@ int main() {
             });
         session->set_close_callback([&](const std::shared_ptr<net::Session>& s) {
             mgr.remove(s->id());
-            std::printf("[game] 玩家 %llu 断开\n", static_cast<unsigned long long>(s->id()));
+            log_line("[game] 玩家 %llu 断开\n", static_cast<unsigned long long>(s->id()));
         });
 
         session->start();
@@ -127,7 +151,7 @@ int main() {
             room.add_player(player_id, team, name);
             st = room.state();
         }
-        std::printf("[game] 玩家 %u 加入，房间 %zu 人，状态=%d\n",
+        log_line("[game] 玩家 %u 加入，房间 %zu 人，状态=%d\n",
                     player_id, room.player_count(), static_cast<int>(st));
 
         if (st == game::RoomState::kFighting) {
@@ -151,7 +175,7 @@ int main() {
         }
     });
 
-    std::printf("[main] 集成服务器就绪 127.0.0.1:9527（120 秒后退出，Ctrl+C 可提前结束）\n");
+    log_line("[main] 集成服务器就绪 127.0.0.1:9527（120 秒后退出，Ctrl+C 可提前结束）\n");
     std::this_thread::sleep_for(std::chrono::seconds(120));
 
     running.store(false);

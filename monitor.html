@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ArenaCore · 技术过程监控</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#0f172a;color:#e2e8f0;font-family:"Microsoft YaHei",Consolas,monospace}
+  .wrap{max-width:1100px;margin:0 auto;padding:16px}
+  h1{font-size:20px;margin:0 0 4px;color:#60a5fa}
+  .sub{color:#94a3b8;font-size:13px;margin-bottom:14px}
+  .flow{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:14px 18px;margin-bottom:14px}
+  .flow h2{font-size:15px;margin:0 0 10px;color:#fbbf24}
+  .steps{display:flex;flex-wrap:wrap;gap:8px;align-items:stretch}
+  .step{background:#0f172a;border:1px solid #334155;border-radius:8px;padding:8px 12px;font-size:12.5px;flex:1;min-width:150px}
+  .step b{display:block;color:#60a5fa;font-size:13px;margin-bottom:4px}
+  .step .src{color:#34d399;font-size:11px;font-family:Consolas,monospace}
+  .arrow{align-self:center;color:#64748b;font-size:18px;padding:0 2px}
+  .legend{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:12px 18px;margin-bottom:14px}
+  .legend h2{font-size:14px;margin:0 0 8px;color:#fbbf24}
+  .lg{display:inline-block;margin:2px 8px 2px 0;padding:2px 10px;border-radius:99px;font-size:12px}
+  .l1{background:#1e3a8a;color:#93c5fd}.l2{background:#14532d;color:#86efac}.l3{background:#7c2d12;color:#fdba74}
+  .l4{background:#4a044e;color:#f0abfc}.l5{background:#312e81;color:#a5b4fc}
+  .logbox{background:#0a0f1c;border:1px solid #334155;border-radius:10px;overflow:hidden}
+  .logbar{display:flex;align-items:center;gap:10px;padding:8px 14px;background:#1e293b;border-bottom:1px solid #334155}
+  .logbar b{font-size:13px;color:#e2e8f0}
+  .logbar .st{color:#f87171;font-size:12px}
+  pre.log{height:420px;overflow-y:auto;margin:0;padding:12px 16px;font-size:12.5px;line-height:1.75;color:#cbd5e1;white-space:pre-wrap;word-break:break-all}
+  .tip{color:#94a3b8;font-size:12px;margin-top:8px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>⚔️ ArenaCore · 技术过程监控</h1>
+  <div class="sub">服务器 + Bot 日志实时叠加 · 每行标注来自哪段代码 · 每 2 秒自动刷新</div>
+
+  <div class="flow">
+    <h2>📋 一局对局的技术过程（每步对应哪段代码）</h2>
+    <div class="steps">
+      <div class="step"><b>1. 启动 IOCP</b>worker 数 = CPU 核数<div class="src">net/iocp_service.cpp · IocpService()</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><b>2. 监听端口</b>socket+bind+listen<div class="src">net/acceptor.cpp · Acceptor::start()</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><b>3. 接受连接</b>accept 新 socket<div class="src">net/acceptor.cpp · accept_loop()</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><b>4. 建 Session</b>绑完成端口 + 登记<div class="src">net/session.cpp · Session()</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><b>5. 玩家入房</b>add_player，满 6 人开打<div class="src">game/room.cpp · add_player()</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><b>6. 30Hz 结算</b>收包→移动→技能→AOI→快照→广播<div class="src">game/room.cpp · do_one_frame_helper()</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><b>7. 广播快照</b>增量 diff 发给视野内玩家<div class="src">game/room.cpp · broadcast()</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><b>8. 客户端收到</b>解包 + 打印<div class="src">tools/bot_client.cpp · recv 循环</div></div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <h2>🏷️ 日志前缀 = 代码来源</h2>
+    <span class="lg l1">[iocp]      ← net/iocp_service.cpp</span>
+    <span class="lg l2">[acceptor]  ← net/acceptor.cpp</span>
+    <span class="lg l3">[session]   ← net/session.cpp</span>
+    <span class="lg l4">[game]      ← tools/game_server_smoke.cpp</span>
+    <span class="lg l5">[botN]      ← tools/bot_client.cpp</span>
+    <span class="lg l1">[room]      ← game/room.cpp</span>
+  </div>
+
+  <div class="logbox">
+    <div class="logbar">
+      <b>📡 实时日志</b>
+      <span class="st">（服务器 + Bot 叠加 · 每秒广播汇总 = 逻辑在跑）</span>
+    </div>
+    <iframe id="logframe" src="logs/demo.log" style="width:100%;height:420px;border:0;background:#0a0f1c"></iframe>
+  </div>
+  <div class="tip">日志实时写入 E:\projects\ArenaCore\logs\demo.log · 本页每 2 秒自动刷新 · 想暂停按 F5 前先停服务器</div>
+</div>
+
+<script>
+// 每 2 秒刷新 iframe（清缓存强制重载）
+setInterval(function(){
+  var f = document.getElementById('logframe');
+  f.src = 'logs/demo.log?t=' + Date.now();
+  try { f.contentWindow.scrollTo(0, f.contentWindow.document.body.scrollHeight); } catch(e) {}
+}, 2000);
+</script>
+</body>
+</html>
