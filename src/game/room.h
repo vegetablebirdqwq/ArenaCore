@@ -2,11 +2,13 @@
 
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <unordered_map>
 #include <vector>
 
 #include "game/aoi.h"
+#include "game/snapshot.h"
 #include "game/world.h"
 
 namespace arena::game {
@@ -45,6 +47,10 @@ struct SkillInput {
     std::uint8_t skill_id = 0;
 };
 
+// ---- 状态同步命令号（外层包 cmd 字段）----
+inline constexpr std::uint16_t kCmdSnapshotDelta = 0x0101;
+inline constexpr std::uint16_t kCmdSnapshotFull = 0x0102;
+
 class Room {
 public:
     void tick(Clock::time_point now);
@@ -67,6 +73,15 @@ public:
 
     std::size_t player_count() const noexcept { return players_.size(); }
 
+    // ---- 状态同步（教程 §6）----
+    /// 发送回调：业务层注入（网络层负责真正发出去）。
+    using SendFn = std::function<void(std::uint32_t player_id, std::uint16_t cmd,
+                                      const std::vector<std::uint8_t>& payload)>;
+    void set_send_fn(SendFn fn) { send_ = std::move(fn); }
+
+    /// 玩家重连：清基线 + 重算视野 + 发全量快照。
+    void on_reconnect(std::uint32_t player_id);
+
 private:
     void do_frame();
 
@@ -75,6 +90,11 @@ private:
     void settle_skills();
     void update_aoi();
     void settle_death_and_result();
+    void build_snapshot();
+    void broadcast();
+
+    /// 生成某玩家视野内的增量帧（force_full = 全量基线）。
+    DeltaFrame diff_for(std::uint32_t viewer_id, bool force_full);
 
     Clock::time_point last_ = Clock::now();
     double acc_ms_ = 0.0;
@@ -87,6 +107,9 @@ private:
     std::vector<MoveInput> pending_moves_;
     std::vector<SkillInput> pending_skills_;
     AoiGrid grid_;
+    SendFn send_;              // 状态同步的发送出口（业务层注入）
+    std::uint64_t broadcast_count_ = 0;   // 埋点：累计广播人次
+    std::uint64_t broadcast_bytes_ = 0;   // 埋点：累计广播字节
 };
 
 }  // namespace arena::game

@@ -72,6 +72,11 @@ struct Player {
     std::uint32_t dup_dropped = 0;       // 被去重丢掉的包数（埋点用）
 
     std::int64_t last_cell = 0;          // 上一帧所在格 key，用于"没换格"快路径
+
+    // ---- 状态同步（每玩家一份，教程 §6.4）----
+    std::vector<std::uint32_t> last_neighbors;                 // 上一帧视野内的实体 id
+    std::unordered_map<std::uint32_t, SnapshotEntry> baseline; // 已确认的基线
 };
 
 }  // namespace arena::game
+

@@ -56,7 +56,10 @@ void Room::do_frame() {
     update_aoi();
     // ⑤ 死亡与胜负判定
     settle_death_and_result();
-    // ⑥⑦ 快照生成与广播 —— 由应用层在 tick 后取 players_ 做（状态同步在 §6）
+    // ⑥ 生成快照
+    build_snapshot();
+    // ⑦ 广播增量
+    broadcast();
 }
 
 void Room::settle_movement() {
@@ -159,7 +162,15 @@ void Room::update_aoi() {
             grid_.insert(id, p.x, p.y);
         }
     }
-    // 邻居查询的结果由状态同步阶段使用（§6）：对每个玩家查九宫格得到 enter/leave。
+    // 给每个活着的玩家算视野集合（九宫格内所有实体），
+    // 存进 last_neighbors —— diff_for 就基于它做增量。
+    for (auto& [id, p] : players_) {
+        if (p.state == EntityState::kAlive) {
+            grid_.query_neighbors(p.x, p.y, id, p.last_neighbors);
+        } else {
+            p.last_neighbors.clear();
+        }
+    }
 }
 
 void Room::settle_death_and_result() {
