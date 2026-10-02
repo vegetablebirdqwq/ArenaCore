@@ -20,7 +20,7 @@ using namespace arena;
 inline constexpr std::uint16_t kCmdMove = 0x0003;
 inline constexpr std::uint16_t kCmdSkill = 0x0004;
 
-// 日志 tee：控制台 + logs/demo.log 双写（monitor.html 读取显示）。
+// 日志 tee：控制台 + logs/demo.log 双写（monitor.html 用 iframe 加载显示）。
 // 用「每次打开-追加-关闭」保证多进程写同一文件不互踩（O_APPEND 原子）。
 // 用绝对路径：不管从哪个目录启动，日志都落在项目 logs\ 下。
 static const char* kLogPath = "E:/projects/ArenaCore/logs/demo.log";
