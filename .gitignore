@@ -14,3 +14,20 @@ compile_commands.json
 CMakeUserPresets.json
 
 ops_state/
+
+# ---- 敏感信息安全网（防误提交密钥）----
+.env
+.env.*
+*.env
+*.key
+*.pem
+*.p12
+*.pfx
+*.cer
+*.crt
+secrets/
+credentials*
+*.secret
+.aws/
+config.json
+settings_local.*
