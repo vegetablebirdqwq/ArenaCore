@@ -19,6 +19,8 @@ inline constexpr std::uint16_t kCmdMove = 0x0003;
 inline constexpr std::uint16_t kCmdSkill = 0x0004;
 
 int main() {
+    // 让控制台用 UTF-8 显示中文输出（否则 GBK 代码页下中文乱码）
+    ::SetConsoleOutputCP(CP_UTF8);
     // 注意：MSVC 的 setvbuf 用 _IOLBF + nullptr buffer 会崩（0xC0000409）。
     // 要么提供 buffer，要么用 _IONBF。这里用 _IONBF（每 printf 立即写）。
     std::setvbuf(stdout, nullptr, _IONBF, 0);

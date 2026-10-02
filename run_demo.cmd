@@ -1,8 +1,8 @@
 @echo off
+chcp 65001 >nul
 REM ============================================================
-REM ArenaCore 一键演示：起服务器 + 6 个 bot 打一局 3v3
-REM 用法：双击本文件（或 cmd 里运行 run_demo.cmd）
-REM 注意：脚本是 ASCII 编码（中文会乱码但功能正常）
+REM ArenaCore one-click demo: server + 6 bots 3v3
+REM Usage: double-click this file (or run run_demo.cmd in cmd)
 REM ============================================================
 setlocal
 cd /d "%~dp0"

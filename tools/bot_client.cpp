@@ -31,6 +31,8 @@ static void print_hex(const std::uint8_t* p, std::size_t n) {
 }
 
 int main(int argc, char** argv) {
+    // 让控制台用 UTF-8 显示中文输出（否则 GBK 代码页下中文乱码）
+    ::SetConsoleOutputCP(CP_UTF8);
     const int bot_id = (argc > 1) ? std::atoi(argv[1]) : 0;
     // MSVC：stdout 重定向时是块缓冲，强杀会丢；用 _IONBF 每 printf 立即写
     std::setvbuf(stdout, nullptr, _IONBF, 0);
