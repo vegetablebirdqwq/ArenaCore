@@ -6,8 +6,10 @@
 #include <vector>
 
 #include "base/buffer.h"
+#include "base/consistent_hash.h"
 #include "net/codec.h"
 
+using arena::base::ConsistentHashRing;
 using arena::base::RingBuffer;
 using arena::net::decode_all;
 using arena::net::encode;
@@ -238,6 +240,59 @@ TEST(codec_accepts_max_size_packet) {
     std::vector<Packet> out;
     CHECK_EQ(decode_all(rb, out), std::size_t{1});
     CHECK_EQ(out[0].payload.size(), body);
+}
+
+// ------------------------------------------------------------------ 一致性哈希
+
+TEST(consistent_hash_expand_moves_less_than_mod) {
+    // 教程 §6.1 自己验证 1：4 节点环，1000 个 key，加第 5 个节点后
+    // 归属没变的比例 > 75%（取模分片只有 20% 留下，一致性哈希 ≈80%）。
+    constexpr std::size_t kKeys = 1000;
+    std::vector<std::string> keys;
+    keys.reserve(kKeys);
+    for (std::size_t i = 0; i < kKeys; ++i) {
+        keys.push_back("player:" + std::to_string(i));
+    }
+
+    ConsistentHashRing ring4;
+    ConsistentHashRing ring5;
+    for (int i = 0; i < 4; ++i) {
+        ring4.add_node("logic-" + std::to_string(i), 150);
+        ring5.add_node("logic-" + std::to_string(i), 150);
+    }
+    ring5.add_node("logic-4", 150);   // 扩容到 5 台
+
+    std::size_t stayed = 0;
+    for (const std::string& k : keys) {
+        if (ring4.locate(k) == ring5.locate(k)) {
+            ++stayed;
+        }
+    }
+    const double ratio = 100.0 * static_cast<double>(stayed) / static_cast<double>(kKeys);
+    std::printf("  扩容后归属未变: %.1f%%\n", ratio);
+    CHECK(ratio > 75.0);   // 理想 80%，留采样余量
+}
+
+TEST(consistent_hash_remove_node_restores) {
+    // 移除节点后，key 重新归到其余节点；同一个节点再加回来，归属与最初一致。
+    ConsistentHashRing ring;
+    for (int i = 0; i < 4; ++i) {
+        ring.add_node("logic-" + std::to_string(i), 150);
+    }
+    const std::string before = ring.locate("player:42");
+
+    ring.remove_node("logic-2");
+    CHECK(ring.node_count() == std::size_t{3});
+
+    ring.add_node("logic-2", 150);
+    CHECK(ring.node_count() == std::size_t{4});
+    CHECK_EQ(ring.locate("player:42"), before);   // 确定性：哈希可复现
+}
+
+TEST(consistent_hash_ring_empty_returns_empty) {
+    ConsistentHashRing ring;
+    CHECK(ring.empty());
+    CHECK(ring.locate("any").empty());   // 空环返回空串，调用方处理
 }
 
 // ------------------------------------------------------------------ entry

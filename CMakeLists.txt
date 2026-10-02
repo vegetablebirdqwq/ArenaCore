@@ -75,3 +75,7 @@ target_compile_options(game_server PRIVATE ${ARENA_CXX_FLAGS})
 add_executable(bot_client tools/bot_client.cpp)
 target_link_libraries(bot_client PRIVATE arena_base)
 target_compile_options(bot_client PRIVATE ${ARENA_CXX_FLAGS})
+
+add_executable(ring_lab tools/ring_lab.cpp)
+target_link_libraries(ring_lab PRIVATE arena_base)
+target_compile_options(ring_lab PRIVATE ${ARENA_CXX_FLAGS})
