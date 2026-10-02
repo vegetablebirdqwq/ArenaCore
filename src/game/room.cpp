@@ -392,7 +392,9 @@ void Room::send_enter_packet(std::uint32_t viewer_id, std::uint32_t entity_id) {
     e.flags = static_cast<std::uint8_t>((p.state == EntityState::kAlive) ? 1u : 0u);
     d.entries.push_back(e);
 
-    send_(viewer_id, kCmdAoiEnter, encode_delta(d));
+    if (send_) {
+        send_(viewer_id, kCmdAoiEnter, encode_delta(d));
+    }
 }
 
 /// 离开视野：只要一个 id，不需要任何状态。
@@ -401,7 +403,9 @@ void Room::send_enter_packet(std::uint32_t viewer_id, std::uint32_t entity_id) {
 void Room::send_leave_packet(std::uint32_t viewer_id, std::uint32_t entity_id) {
     std::vector<std::uint8_t> payload;
     net::write_varint(payload, entity_id);
-    send_(viewer_id, kCmdAoiLeave, payload);
+    if (send_) {
+        send_(viewer_id, kCmdAoiLeave, payload);
+    }
 }
 
 // ---- 状态同步（教程 §6.4）----
@@ -513,7 +517,9 @@ void Room::broadcast() {
         }
 
         const std::vector<std::uint8_t> payload = encode_delta(d);
-        send_(viewer_id, kCmdSnapshotDelta, payload);
+        if (send_) {
+            send_(viewer_id, kCmdSnapshotDelta, payload);
+        }
 
         // 更新基线：把这一帧发出去的状态记下来，下一帧跟它比。
         for (const DeltaEntry& e : d.entries) {
@@ -588,7 +594,9 @@ void Room::on_reconnect(std::uint32_t player_id) {
             base.hp_percent = e.hp_percent;
             base.flags = e.flags;
         }
-        send_(player_id, kCmdSnapshotFull, encode_delta(full));
+        if (send_) {
+            send_(player_id, kCmdSnapshotFull, encode_delta(full));
+        }
     }
 
     // 顺便把房间的元信息也带上（帧号、状态、存活人数）——客户端需要知道
@@ -607,7 +615,9 @@ void Room::send_room_meta(std::uint32_t player_id, std::uint64_t frame) {
         }
     }
     net::write_varint(payload, alive);
-    send_(player_id, kCmdRoomMeta, payload);
+    if (send_) {
+        send_(player_id, kCmdRoomMeta, payload);
+    }
 }
 
 }  // namespace arena::game

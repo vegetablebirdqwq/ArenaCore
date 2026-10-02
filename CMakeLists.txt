@@ -25,6 +25,7 @@ add_library(arena_base STATIC
     src/game/room.cpp
     src/game/aoi.cpp
     src/game/snapshot_codec.cpp
+    src/game/room_manager.cpp
 )
 target_include_directories(arena_base PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_options(arena_base PRIVATE ${ARENA_CXX_FLAGS})
@@ -92,3 +93,7 @@ target_compile_options(hist_lab PRIVATE ${ARENA_CXX_FLAGS})
 add_executable(bench_bot tools/bench_bot.cpp)
 target_link_libraries(bench_bot PRIVATE arena_base)
 target_compile_options(bench_bot PRIVATE ${ARENA_CXX_FLAGS})
+
+add_executable(room_manager_smoke tools/room_manager_smoke.cpp)
+target_link_libraries(room_manager_smoke PRIVATE arena_base)
+target_compile_options(room_manager_smoke PRIVATE ${ARENA_CXX_FLAGS})
