@@ -88,3 +88,7 @@ target_compile_options(redis_demo PRIVATE ${ARENA_CXX_FLAGS})
 add_executable(hist_lab tools/hist_lab.cpp)
 target_link_libraries(hist_lab PRIVATE arena_base)
 target_compile_options(hist_lab PRIVATE ${ARENA_CXX_FLAGS})
+
+add_executable(bench_bot tools/bench_bot.cpp)
+target_link_libraries(bench_bot PRIVATE arena_base)
+target_compile_options(bench_bot PRIVATE ${ARENA_CXX_FLAGS})
