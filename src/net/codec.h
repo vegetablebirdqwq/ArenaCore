@@ -29,6 +29,10 @@ inline constexpr std::uint32_t kMinLength = 4u;  // cmd(2) + seq(2)
 inline constexpr std::size_t kLengthFieldSize = 4;
 inline constexpr std::size_t kHeaderSize = 8;  // len(4) + cmd(2) + seq(2)
 
+// ---- 命令号（应用层协议）----
+inline constexpr std::uint16_t kCmdHeartbeatPing = 0x0001;   // 服务端 -> 客户端
+inline constexpr std::uint16_t kCmdHeartbeatPong = 0x0002;   // 客户端 -> 服务端
+
 struct Packet {
     std::uint16_t cmd = 0;
     std::uint16_t seq = 0;
