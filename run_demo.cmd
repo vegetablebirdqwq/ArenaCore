@@ -20,8 +20,9 @@ taskkill /IM bot_client.exe /F >nul 2>&1
 timeout /t 1 /nobreak >nul
 
 REM start 2 bots first (they auto-retry until server is up)
-start "Bot1" cmd /k "build\bot_client.exe 1"
-start "Bot2" cmd /k "build\bot_client.exe 2"
+REM bot1 = default mode (Wanderer), bot2 = mode 2 (Aggressor) - different behaviors
+start "Bot1-Wanderer" cmd /k "build\bot_client.exe 1"
+start "Bot2-Aggressor" cmd /k "build\bot_client.exe 2 2"
 
 REM server runs in foreground (log shows here)
 echo [demo] starting server...
