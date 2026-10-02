@@ -21,6 +21,7 @@ add_library(arena_base STATIC
     src/net/session.cpp
     src/net/session_manager.cpp
     src/base/log.cpp
+    src/base/resp_client.cpp
     src/game/room.cpp
     src/game/aoi.cpp
     src/game/snapshot_codec.cpp
@@ -79,3 +80,7 @@ target_compile_options(bot_client PRIVATE ${ARENA_CXX_FLAGS})
 add_executable(ring_lab tools/ring_lab.cpp)
 target_link_libraries(ring_lab PRIVATE arena_base)
 target_compile_options(ring_lab PRIVATE ${ARENA_CXX_FLAGS})
+
+add_executable(redis_demo tools/redis_demo.cpp)
+target_link_libraries(redis_demo PRIVATE arena_base)
+target_compile_options(redis_demo PRIVATE ${ARENA_CXX_FLAGS})
