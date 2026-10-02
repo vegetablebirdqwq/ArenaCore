@@ -21,6 +21,7 @@ add_library(arena_base STATIC
     src/net/session.cpp
     src/net/session_manager.cpp
     src/base/log.cpp
+    src/game/room.cpp
 )
 target_include_directories(arena_base PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_options(arena_base PRIVATE ${ARENA_CXX_FLAGS})
@@ -48,3 +49,7 @@ target_compile_options(echo_smoke PRIVATE ${ARENA_CXX_FLAGS})
 add_executable(echo_client tools/client_smoke.cpp)
 target_link_libraries(echo_client PRIVATE arena_base)
 target_compile_options(echo_client PRIVATE ${ARENA_CXX_FLAGS})
+
+add_executable(logic_frame_smoke tools/logic_frame_smoke.cpp)
+target_link_libraries(logic_frame_smoke PRIVATE arena_base)
+target_compile_options(logic_frame_smoke PRIVATE ${ARENA_CXX_FLAGS})
