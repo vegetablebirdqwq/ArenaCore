@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><title>ArenaCore · 边看边学</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#f3f4f6;color:#1f2937;font-family:"Microsoft YaHei",sans-serif;font-size:14px;line-height:1.8}
+  .wrap{max-width:900px;margin:0 auto;padding:22px}
+  h1{font-size:22px;margin:0 0 6px}
+  .sub{color:#6b7280;font-size:13px;margin-bottom:18px}
+  .card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:14px 18px;margin-bottom:14px}
+  .head{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+  .log{font-family:Consolas,monospace;font-size:13px;background:#0f172a;color:#7dd3fc;padding:2px 10px;border-radius:6px}
+  .src{font-size:12px;color:#6b7280;font-family:Consolas,monospace}
+  pre{background:#0f172a;color:#e2e8f0;padding:10px 14px;border-radius:8px;overflow-x:auto;font-size:12.5px;margin:8px 0}
+  .row{margin:6px 0;font-size:13.5px}
+  .iv{background:#f0fdf4;border-left:3px solid #22c55e;padding:8px 12px;border-radius:0 6px 6px 0}
+  b{color:#1e40af}
+</style></head>
+<body><div class="wrap">
+  <h1>🔍 ArenaCore · 边看边学（日志 ↔ 源码对照）</h1>
+  <div class="sub">跑 demo（run_demo.cmd）时看到某行日志，就翻到这里看是哪段代码、在干嘛、面试怎么讲。日志文本 = 项目真实输出。</div>
+  <div class="card">
+  <div class="head"><span class="log">[iocp] 端口建好了，worker 数 = 16</span><span class="src">src/net/iocp_service.cpp · IocpService() 构造（约 L24）</span></div>
+  <pre><code>std::printf("[iocp] 端口建好了，worker 数 = %u\n", worker_count_);</code></pre>
+  <div class="row"><b>这段代码在干嘛：</b>CreateIoCompletionPort 创建完成端口，worker 数 = CPU 逻辑核数。16 = 你的核数。</div>
+  <div class="row iv"><b>💡 面试点：</b>为什么 worker 数 = 核数：完成端口由内核调度，worker 线程忙等收完成包；多于核数只会增加切换。「并发值」是内核允许同时运行的 worker 数，不是线程数。</div>
+</div><div class="card">
+  <div class="head"><span class="log">[acceptor] 监听 127.0.0.1:9527 成功</span><span class="src">src/net/acceptor.cpp · Acceptor::start()（约 L61）</span></div>
+  <pre><code>std::printf("[acceptor] 监听 %s:%u 成功\n", ip, port);</code></pre>
+  <div class="row"><b>这段代码在干嘛：</b>socket + bind + listen 完成，进入监听状态。accept 线程在独立线程上阻塞 accept。</div>
+  <div class="row iv"><b>💡 面试点：</b>阻塞 accept 放独立线程在 IOCP 架构里是【正确的】不是妥协：accept 阻塞不烧 CPU，线程数和连接数解耦（100 万连接也只要 1 条 accept 线程）。</div>
+</div><div class="card">
+  <div class="head"><span class="log">[acceptor] accept 线程启动</span><span class="src">src/net/acceptor.cpp · accept_loop()（约 L82）</span></div>
+  <pre><code>std::printf("[acceptor] accept 线程启动, tid=%lu\n", ::GetCurrentThreadId());</code></pre>
+  <div class="row"><b>这段代码在干嘛：</b>accept 循环线程开始跑：阻塞 accept → 拿到新连接 → 关 Nagle → 交给工厂建 Session。</div>
+  <div class="row iv"><b>💡 面试点：</b>Nagle 必须关（TCP_NODELAY）：否则和延迟 ACK 撞出 40ms 神秘延迟，游戏服务器必做。</div>
+</div><div class="card">
+  <div class="head"><span class="log">[game] 玩家 1 加入，房间 5 人，状态=0</span><span class="src">tools/game_server_smoke.cpp · on_accept 回调（约 L154）</span></div>
+  <pre><code>log_line("[game] 玩家 %u 加入，房间 %zu 人，状态=%d\n", ...);</code></pre>
+  <div class="row"><b>这段代码在干嘛：</b>新连接被 accept 后建了 Session，玩家加入房间。状态=0 是 kWaiting（等满 6 人）。</div>
+  <div class="row iv"><b>💡 面试点：</b>add_player 满 6 人才从 kWaiting → kFighting（状态机在 room.cpp add_player 里）。3v3 设计：双方各 3 人，出生点相距 600（大于射程 300，有走进射程的过渡期）。</div>
+</div><div class="card">
+  <div class="head"><span class="log">[bot1] 已连接，加入房间</span><span class="src">tools/bot_client.cpp · main（约 L79）</span></div>
+  <pre><code>log_line("[bot%d] 已连接，加入房间\n", bot_id);</code></pre>
+  <div class="row"><b>这段代码在干嘛：</b>bot 客户端 TCP 连接成功。它只是演示客户端（非自研，面试主动声明）。</div>
+  <div class="row iv"><b>💡 面试点：</b>bot = 压测工具前身：连服务器、发指令、收快照解析。M11 压测就是把它变成多连接。</div>
+</div><div class="card">
+  <div class="head"><span class="log">[game] 玩家 2 加入，房间 6 人，状态=1</span><span class="src">tools/game_server_smoke.cpp · on_accept 回调</span></div>
+  <pre><code>log_line("[game] 玩家 %u 加入，房间 %zu 人，状态=%d\n", ...);</code></pre>
+  <div class="row"><b>这段代码在干嘛：</b>第 6 人加入 → 房间满员 → 状态=1 (kFighting) → 开始 30Hz 逻辑结算。</div>
+  <div class="row iv"><b>💡 面试点：</b>满员判定在 room.cpp add_player：players_.size() >= 6 → state_ = kFighting。队伍人数校验属于匹配层职责，逻辑层信任进来的队伍（职责分离）。</div>
+</div><div class="card">
+  <div class="head"><span class="log">[game] 广播汇总: 过去 1 秒 N 次 / M 字节</span><span class="src">tools/game_server_smoke.cpp · send_fn 回调（约 L85）</span></div>
+  <pre><code>log_line("[game] 广播汇总: 过去 1 秒 %llu 次 / %llu 字节\n", ...);</code></pre>
+  <div class="row"><b>这段代码在干嘛：</b>Room 每帧结算完，把增量快照发给视野内玩家。每秒汇总一次避免刷屏。</div>
+  <div class="row iv"><b>💡 面试点：</b>广播是 N 倍放大的：1 条广播 N 个人收，省 1 字节 = 省 N 字节流量。增量 diff + 紧凑编码（int16 坐标/uint8 血量）= 教程 §6.3 的核心。</div>
+</div><div class="card">
+  <div class="head"><span class="log">[bot1] 收到快照 cmd=0302 len=24</span><span class="src">tools/bot_client.cpp · recv 循环（约 L101）</span></div>
+  <pre><code>log_line("[bot%d] 收到快照 cmd=%04X len=%u: ", bot_id, cmd, len);</code></pre>
+  <div class="row"><b>这段代码在干嘛：</b>bot 收到服务器的广播快照。cmd=0302 是增量快照（0301 是全量）。</div>
+  <div class="row iv"><b>💡 面试点：</b>0302 = kCmdSnapshotDelta（增量）：玩家移动了才发；0301 = kCmdSnapshotFull（全量）：刚进视野/断线重连才发。快照 payload 是 varint+位掩码+窄字段的紧凑编码。</div>
+</div><div class="card">
+  <div class="head"><span class="log">[game] 玩家 1 断开</span><span class="src">tools/game_server_smoke.cpp · close_callback（约 L140）</span></div>
+  <pre><code>log_line("[game] 玩家 %llu 断开\n", static_cast<unsigned long long>(s->id()));</code></pre>
+  <div class="row"><b>这段代码在干嘛：</b>连接关闭（对端 FIN / 心跳超时踢人）→ Session 析构 → 从管理器移除。</div>
+  <div class="row iv"><b>💡 面试点：</b>连接关闭走 Session::close()：关闸 → CancelIoEx → 等 pending_io_ 归零 → closesocket。顺序错会 double free 或泄漏（教程 §7.6）。</div>
+</div><div class="card">
+  <div class="head"><span class="log">（逻辑结算在每帧发生，不打日志）</span><span class="src">src/game/room.cpp · do_one_frame_helper()（约 L122）</span></div>
+  <pre><code>collect_inputs(); settle_movement(); settle_skills(); ...</code></pre>
+  <div class="row"><b>这段代码在干嘛：</b>30Hz 每帧：收输入 → 移动 → 技能 → 死亡 → AOI → 快照 → 广播。七阶段串行，顺序由数据依赖决定。</div>
+  <div class="row iv"><b>💡 面试点：</b>服务端权威：客户端只传意图（skill_id+target_id+seq），伤害/射程/位移服务端算。确定性：定点整数 + 帧计数 CD，同一输入序列可复现。</div>
+</div>
+  <div class="sub" style="margin-top:16px">建议用法：demo 窗口放左半屏，本页放右半屏，边跑边对照。</div>
+</div></body></html>
