@@ -16,6 +16,7 @@ set(ARENA_CXX_FLAGS /W4 /permissive- /utf-8 /Zc:__cplusplus /Zc:preprocessor /EH
 # ---------------------------------------------------------------- core library
 add_library(arena_base STATIC
     src/net/codec.cpp
+    src/net/iocp_service.cpp
     src/base/log.cpp
 )
 target_include_directories(arena_base PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -31,3 +32,8 @@ add_executable(arena_tests tests/test_main.cpp)
 target_link_libraries(arena_tests PRIVATE arena_base)
 target_compile_options(arena_tests PRIVATE ${ARENA_CXX_FLAGS})
 add_test(NAME arena_unit COMMAND arena_tests)
+
+# ---------------------------------------------------------------- smoke tools
+add_executable(iocp_smoke tools/iocp_service_smoke.cpp)
+target_link_libraries(iocp_smoke PRIVATE arena_base)
+target_compile_options(iocp_smoke PRIVATE ${ARENA_CXX_FLAGS})
